@@ -13,21 +13,18 @@ let {Value, Length} = Validation;
 describe('Type', () => {
   it('should set default and name', () => {
     var MyString = Str.named('string').using({default: 'default'});
-    var s = new MyString();
-    expect(s.name).to.equal('string');
-    expect(s.default).to.equal('default');
+    expect(MyString.name).to.equal('string');
+    expect(MyString.default).to.equal('default');
   })
 
   it('should set value to undefined', () => {
-    var s = new Str();
-    expect(s.value).to.be.undefined;
-    expect(s.valid).to.equal(undefined);
+    expect(Str.value).to.be.undefined;
+    expect(Str.valid).to.equal(undefined);
   })
 
   it('should validate element without validators to true', () => {
-    var s = new Str();
-    s.validate();
-    expect(s.valid).to.equal(true);
+    const errors = Str.validate('a string');
+    expect(errors.get('valid')).to.equal(true);
   })
 
   describe('Scalars', () => {
@@ -35,67 +32,67 @@ describe('Type', () => {
       it('should set default', () => {
         var MyString = Str.using({default: 'hi'});
         var s = MyString.fromDefaults();
-        expect(s.value).to.equal(s.default);
-        expect(s.value).to.equal('hi');
+        expect(s).to.equal(MyString.default);
+        expect(s).to.equal('hi');
       })
 
       it('should coerce to string', () => {
-        var s = new Str();
-        expect(s.set(123)).to.equal(true);
-        expect(s.value).to.equal('123');
-
-        expect(s.set(true)).to.equal(true);
-        expect(s.value).to.equal('true');
-
-        expect(s.set(null)).to.equal(false);
-        expect(s.value).to.equal(undefined);
+        expect(Str.adapt(123)).to.equal('123');
+        expect(Str.adapt(true)).to.equal('true');
+        expect(Str.adapt.bind(Str, null)).to.throw(/cannot read property 'toString' of null/i);
       })
     })
 
     describe('Int', () => {
       it('should accept parseable integers', () => {
-        let n = new Int();
-        n.set('yoooo');
-        expect(n.value).to.equal(undefined)
-        n.set('123');
-        expect(n.value).to.equal(123)
+        expect(Int.adapt.bind(Int, 'yoooo')).to.throw(Error);
+        expect(Int.adapt('123')).to.equal(123);
       })
     })
 
     describe('Bool', () => {
       it('should coerce to truthiness', () => {
         let George = Bool.using({default: false});
-        let george = George.fromDefaults();
-        expect(george.value).to.equal(false);
-        george.set(undefined);
-        expect(george.value).to.equal(false);
-        george.set('');
-        expect(george.value).to.equal(false);
-        george.set(true);
-        expect(george.value).to.equal(true);
-        george.set('hi');
-        expect(george.value).to.equal(true);
-        george.set([1, 2, 3]);
-        expect(george.value).to.equal(true);
+        expect(George.fromDefaults()).to.equal(false);
+        expect(George.adapt(undefined)).to.equal(false);
+        expect(George.adapt('')).to.equal(false);
+        expect(George.adapt(true)).to.equal(true);
+        expect(George.adapt('hi')).to.equal(true);
+        expect(George.adapt([1, 2, 3])).to.equal(true);
       })
     })
 
     describe('Enum', () => {
       describe('of Str', () => {
-        let Fruit = Enum.of(Str).valued(['Apple', 'Banana', 'Carambola', 'Dragonfruit']);
-        let fruit = new Fruit();
-        expect(fruit.set('Spinach')).to.equal(false);
-        expect(fruit.value).to.equal(undefined);
-        expect(fruit.set('Banana')).to.equal(true);
-        expect(fruit.value).to.equal('Banana');
+        it('passes tests', () => {
+          let Fruit = Enum.of(Str).valued(['Apple', 'Banana', 'Carambola', 'Dragonfruit']);
+          expect(Fruit.adapt.bind(Fruit, 'Spinach')).to.throw();
+          expect(Fruit.validate.bind(Fruit, 'Spinach')).to.throw();
+          expect(Fruit.adapt('Banana')).to.equal('Banana');
+          expect(Fruit.validate('Banana').toJS()).to.eql({valid: true, self: []});
+
+          // let fruit = new Fruit();
+          // expect(fruit.set('Spinach')).to.equal(false);
+          // expect(fruit.value).to.equal(undefined);
+          // expect(fruit.set('Banana')).to.equal(true);
+          // expect(fruit.value).to.equal('Banana');
+        })
       })
 
       describe('of Int', () => {
-        let Prime = Enum.of(Int).valued([2, 3, 5, 7, 11, 13, 17]);
-        let prime = new Prime();
-        expect(prime.set(1)).to.equal(false);
-        expect(prime.set(3)).to.equal(true);
-        expect(prime.value).to.equal(3);
+        it('passes tests', () => {
+          let Prime = Enum.of(Int).valued([2, 3, 5, 7, 11, 13, 17]);
+          expect(Prime.adapt.bind(Prime, 1)).to.throw();
+          expect(Prime.validate.bind(Prime, 1)).to.throw();
+          expect(Prime.adapt(3)).to.equal(3);
+          expect(Prime.adapt('3')).to.equal(3);
+          expect(Prime.validate(3).toJS()).to.eql({valid: true, self: []});
+
+          // let prime = new Prime();
+          // expect(prime.set(1)).to.equal(false);
+          // expect(prime.set(3)).to.equal(true);
+          // expect(prime.value).to.equal(3);
+        })
       })
     })
   })
@@ -105,7 +102,7 @@ describe('Type', () => {
     describe('List', () => {
       var Strings = List.of(Str);
 
-      it('should set valid array', () => {
+      it.only('should set valid array', () => {
         let ss = new Strings;
         ss.set(['yoghurt', 'pops']);
         expect(ss.value).to.equal(Immutable.List(['yoghurt', 'pops']));
@@ -139,7 +136,10 @@ describe('Type', () => {
 
     describe('Map', () => {
       let ABMap = Map.of(Str.named('a'), Int.named('b'));
-      let abMap = new ABMap();
+      let abMap;
+      beforeEach(() => {
+        abMap = new ABMap();
+      })
 
       describe('set()', () => {
         it('should accept object values', () => {

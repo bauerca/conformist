@@ -1,6 +1,40 @@
 import Immutable from 'immutable';
 import {isObject, consume} from './util';
 
+const Type2 = {
+  named(name) {
+    return this.using({name});
+  },
+  using(overrides) {
+    return Object.assign({}, this, overrides);
+  },
+  validatedBy(...validators) {
+    return this.using({validators});
+  },
+  fromDefaults() {
+    return Immutable.fromJS(this.default);
+  },
+  adapt(value) {
+    return value;
+  },
+  validate(value, context) {
+    value = this.adapt(value); // Should throw if adaptation is impossible.
+    return this.validators.reduce(
+      (errors, validator) => {
+        const error = validator(value, context);
+        if (error) {
+          return errors
+            .update('self', self => self.push(error))
+            .set('valid', false);
+        }
+        return errors;
+      },
+      Immutable.fromJS({ valid: true, self: [] }),
+    );
+  },
+  validators: [],
+};
+
 
 // Thank you IE, for making this necessary
 // Per http://babeljs.io/docs/advanced/caveats/, static methods do not
@@ -164,6 +198,12 @@ class Bool extends Scalar {
   }
 }
 
+const Bool2 = Type2.using({
+  adapt(value) {
+    return !!value;
+  },
+});
+
 
 @staticify
 class Str extends Scalar {
@@ -172,10 +212,20 @@ class Str extends Scalar {
   }
 }
 
+const Str2 = Type2.using({
+  adapt(value) {
+    return value.toString();
+  },
+});
+
 
 class Num extends Scalar {
   // ?
 }
+
+const Num2 = Type2.using({
+  // ?
+});
 
 
 @staticify
@@ -189,8 +239,17 @@ class Int extends Num {
   }
 }
 
-// TODO: This currently ignores any validators on the child schema
-@staticify
+const Int2 = Num2.using({
+  adapt(raw) {
+    const value = parseInt(raw, 10);
+    if (isNaN(value)) {
+      throw new AdaptationError(`${value} is not a number`);
+    }
+    return value;
+  },
+});
+
+
 class Enum extends Scalar {
   constructor(value) {
     super();
@@ -223,6 +282,26 @@ class Enum extends Scalar {
 
 Enum.prototype.childType = Str;
 
+
+const Enum2 = Type2.using({
+  ChildType: Str2,
+  adapt(value) {
+    value = this.ChildType.adapt(value);
+    if (this.choices.indexOf(value) < 0) {
+      throw new AdaptationError();
+    }
+    return value;
+  },
+  of(ChildType) {
+    return this.using({ChildType});
+  },
+  valued(choices) {
+    return this.using({choices});
+  },
+  choices: [],
+});
+
+
 class Container extends Type {
   validate(context) {
     this.errors = [];
@@ -235,8 +314,50 @@ class Container extends Type {
   }
 }
 
+const List2 = Type2.using({
+  validateAt(list, index, context) {
+    return this.Type.validate(list[index], context);
+  },
+  of(Type) {
+    return this.using({Type});
+  },
+  validate(list, context) {
+    return Type2
+      .validate(list, context)
+      .set(
+        'children',
+        list.map(value => {
+          return this.Type.validate(value, context);
+        })
+      );
+  },
+});
 
-@staticify
+
+const Map2 = Type2.using({
+  of(...Types) {
+    return this.using({
+      Types: Types.reduce((TypeMap, Type) => {
+        TypeMap[Type.name] = Type;
+        return TypeMap;
+      }, {})
+    });
+  },
+  validate(map, context) {
+    return Type2
+      .validate(map, context)
+      .set(
+        'children',
+        map.reduce(
+          (errors, value, key) => errors.set(
+            key, this.TypeMap[key].validate(value, context)
+          ),
+          Immutable.Map()
+        )
+      );
+  },
+})
+
 class List extends Container {
   get value() {
     return Immutable.List(this.members.map(m => m.value));
@@ -421,4 +542,5 @@ class Map extends Container {
 }
 
 
-export default {Type, Scalar, Num, Int, Str, Bool, Enum, Container, List, Map};
+// export default {Type, Scalar, Num, Int, Str, Bool, Enum, Container, List, Map};
+export default {Type: Type2, Num: Num2, Int: Int2, Str: Str2, Bool: Bool2, Enum: Enum2, List: List2, Map: Map2};
